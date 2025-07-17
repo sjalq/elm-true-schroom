@@ -6,6 +6,7 @@ import Html.Events exposing (onClick)
 import Pages.Admin
 import Pages.Default
 import Pages.Examples
+import Pages.ShroomDashboard
 import Route exposing (..)
 import Theme -- Import the new Theme module
 import Types exposing (..)
@@ -24,7 +25,7 @@ viewTabs model =
             Theme.getColors isDark
         
         baseTabs =
-            [ { label = "Home", href = Route.toString Default, isActive = model.currentRoute == Default, colors = colors }
+            [ { label = "Shroom Dashboard", href = Route.toString ShroomDashboard, isActive = model.currentRoute == ShroomDashboard, colors = colors }
             , { label = "Examples", href = Route.toString Examples, isActive = model.currentRoute == Examples, colors = colors }
             ]
         
@@ -94,6 +95,9 @@ viewCurrentPage model =
         , Attr.style "background-color" colors.primaryBg
         ]
         [ case model.currentRoute of
+            ShroomDashboard ->
+                Html.map ShroomDashboardMsg (Pages.ShroomDashboard.view model.shroomDashboard)
+
             Default ->
                 Pages.Default.view model colors
 

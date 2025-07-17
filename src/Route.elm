@@ -8,12 +8,13 @@ import Url.Parser as Parser exposing ((</>), Parser, oneOf, s)
 parser : Parser (Route -> a) a
 parser =
     oneOf
-        [ Parser.map Default Parser.top
+        [ Parser.map ShroomDashboard Parser.top
         , Parser.map (Admin AdminDefault) (s "admin")
         , Parser.map (Admin AdminLogs) (s "admin" </> s "logs")
         , Parser.map (Admin AdminFetchModel) (s "admin" </> s "fetch-model")
         --, Parser.map (Admin AdminFusion) (s "admin" </> s "fusion")
         , Parser.map Examples (s "examples")
+        , Parser.map Default (s "default")
         ]
 
 
@@ -26,8 +27,11 @@ fromUrl url =
 toString : Route -> String
 toString route =
     case route of
-        Default ->
+        ShroomDashboard ->
             "/"
+
+        Default ->
+            "/default"
 
         Admin AdminDefault ->
             "/admin"

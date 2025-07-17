@@ -29,6 +29,7 @@ type alias BrowserCookie =
 
 type Route
     = Default
+    | ShroomDashboard 
     | Admin AdminRoute
     | Examples
     | NotFound
@@ -59,6 +60,7 @@ type alias FrontendModel =
     , pendingAuth : Bool
     -- , fusionState : Fusion.Value
     , preferences : Preferences
+    , shroomDashboard : ShroomDashboardModel
     }
 
 
@@ -68,6 +70,13 @@ type alias BackendModel =
     , sessions : Dict Lamdera.SessionId Auth.Common.UserInfo
     , users : Dict Email User
     , pollingJobs : Dict PollingToken (PollingStatus PollData)
+    , shroomHoldersCache : Maybe ShroomHoldersCache
+    }
+
+type alias ShroomHoldersCache =
+    { holders : List TokenHolder
+    , lastUpdated : Int
+    , cacheValidMinutes : Int
     }
 
     
@@ -87,6 +96,8 @@ type FrontendMsg
     | ConsoleLogReceived String
     | CopyToClipboard String
     | ClipboardResult (Result String String)
+    --- ShroomDashboard
+    | ShroomDashboardMsg ShroomDashboardMsg
     --- Fusion
     -- | Admin_FusionPatch Fusion.Patch.Patch
     -- | Admin_FusionQuery Fusion.Query
@@ -94,18 +105,17 @@ type FrontendMsg
 
 type ToBackend
     = NoOpToBackend
-    | WS_Receive String
-    -- Admin
-    | Admin_FetchLogs
-    | Admin_ClearLogs
-    | Admin_FetchRemoteModel String
     | AuthToBackend Auth.Common.ToBackend
     | GetUserToBackend
+    | Admin_FetchRemoteModel String
+    | Admin_FetchLogs
+    | Admin_ClearLogs
     | LoggedOut
+    | FetchShroomHoldersViaMoralis
+    | FetchShroomHoldersViaGoldRush
+    | LoadMoreShroomHolders (Maybe String)
     | SetDarkModePreference Bool
-    --- Fusion
-    -- | Fusion_PersistPatch Fusion.Patch.Patch
-    -- | Fusion_Query Fusion.Query
+    | WS_Receive String
 
 
 type BackendMsg
@@ -117,6 +127,10 @@ type BackendMsg
       -- example to show polling mechanism
     | GotCryptoPriceResult PollingToken (Result Http.Error String)
     | StoreTaskResult PollingToken (Result String String)
+    -- ShroomDashboard
+    | GotMoralisHoldersResponse (Result Http.Error (List TokenHolder))
+    | GotGoldRushHoldersResponse (Result Http.Error (List TokenHolder))
+    | GotMoreGoldRushHoldersResponse Int (Result Http.Error (List TokenHolder))
 
 
 type ToFrontend
@@ -129,6 +143,10 @@ type ToFrontend
     | UserInfoMsg (Maybe Auth.Common.UserInfo)
     | UserDataToFrontend UserFrontend
     | PermissionDenied ToBackend
+    -- ShroomDashboard
+    | ShroomHoldersData (Result String (List TokenHolder))
+    | MoreShroomHoldersData (Result String { holders : List TokenHolder, cursor : Maybe String })
+    | ProgressiveHoldersUpdate (List TokenHolder)
     -- | Admin_FusionResponse Fusion.Value
 
 
@@ -189,3 +207,33 @@ type alias PollData =
 type alias Preferences =
     { darkMode : Bool
     }
+
+-- SHROOM DASHBOARD TYPES
+type alias TokenHolder =
+    { address : String
+    , balance : Float
+    }
+
+type alias ShroomDashboardModel =
+    { holders : List TokenHolder
+    , totalHolders : Int
+    , loading : Bool
+    , loadingMore : Bool
+    , error : Maybe String
+    , hoveredHolder : Maybe TokenHolder
+    , cursor : Maybe String
+    , hasMore : Bool
+    , medianHolding : Float
+    , averageHolding : Float
+    , maxHolding : Float
+    , totalTokens : Float
+    }
+
+type ShroomDashboardMsg
+    = FetchHolderData
+    | LoadMoreHolders
+    | GotHolderData (Result Http.Error (List TokenHolder))
+    | GotMoreHolderData (Result Http.Error { holders : List TokenHolder, cursor : Maybe String })
+    | HoverHolder (Maybe TokenHolder)
+    | FetchViaMoralis
+    | FetchViaGoldRush

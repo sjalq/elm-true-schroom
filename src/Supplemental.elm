@@ -458,3 +458,20 @@ day =
 week : number
 week =
     7 * day
+
+
+addCommas : String -> String
+addCommas str =
+    let
+        chars = String.toList str
+        reversedChars = List.reverse chars
+        grouped = reversedChars 
+            |> List.indexedMap (\i char -> 
+                if i > 0 && modBy 3 i == 0 then
+                    [',', char]
+                else
+                    [char]
+            ) 
+            |> List.concat
+    in
+    grouped |> List.reverse |> String.fromList

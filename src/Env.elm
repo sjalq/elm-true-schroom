@@ -58,6 +58,26 @@ openRouterApiKey =
     "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"
 
 
+moralisApiKey : String
+moralisApiKey =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6ImViNDEyNTU5LWUyZWYtNDg2Ny04ZThmLTFlMDlmODYwMzFmMiIsIm9yZ0lkIjoiNDU5NzEyIiwidXNlcklkIjoiNDcyOTYyIiwidHlwZUlkIjoiMjE5NjViMjAtOWE0YS00MTFjLWFmMzAtNThlYTRjMGFiNDNjIiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3NTI3MDA4MDIsImV4cCI6NDkwODQ2MDgwMn0.ua5Fd72vuUm0tg742h9x5N8JMSfEHmAqduH335iIAkg"
+
+
+alchemyApiKey : String
+alchemyApiKey =
+    "UF9iXc8OyKFMJHfd5p40k"
+
+
+goldRushApiKey : String
+goldRushApiKey =
+    "cqt_rQjTc7CCf3m6wVkBcp68kh98BrwJ"
+
+
+shroomTokenAddress : String
+shroomTokenAddress =
+    "0xAD3eB8058e9E0ad547e2aF549388Df451b00D8BD"
+
+
 type Mode
     = Development
     | Production

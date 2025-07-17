@@ -9,10 +9,12 @@ import Ports.Clipboard
 import Html exposing (..)
 import Html.Attributes as Attr exposing (style)
 import Html.Events as HE
+import Http
 import Lamdera
 import Pages.Admin
 import Pages.Default
 import Pages.Examples
+import Pages.ShroomDashboard
 import Pages.PageFrame exposing (viewCurrentPage, viewTabs)
 import Route exposing (..)
 import Supplemental exposing (..)
@@ -25,6 +27,92 @@ import Theme
 
 type alias Model =
     FrontendModel
+
+
+calculateStatistics : List TokenHolder -> { median : Float, average : Float, max : Float, total : Float }
+calculateStatistics holders =
+    if List.isEmpty holders then
+        { median = 0, average = 0, max = 0, total = 0 }
+    else
+        let
+            balances = holders |> List.map .balance |> List.sort
+            total = List.sum balances
+            count = List.length balances
+            average = total / toFloat count
+            max = List.maximum balances |> Maybe.withDefault 0
+            median = 
+                let
+                    midIndex = count // 2
+                in
+                if modBy 2 count == 0 then
+                    (List.drop (midIndex - 1) balances |> List.head |> Maybe.withDefault 0) +
+                    (List.drop midIndex balances |> List.head |> Maybe.withDefault 0) / 2
+                else
+                    List.drop midIndex balances |> List.head |> Maybe.withDefault 0
+        in
+        { median = median, average = average, max = max, total = total }
+
+
+updateShroomDashboard : ShroomDashboardMsg -> ShroomDashboardModel -> ( ShroomDashboardModel, Cmd ShroomDashboardMsg )
+updateShroomDashboard msg model =
+    case msg of
+        FetchHolderData ->
+            ( { model | loading = True, error = Nothing }, Cmd.none )
+
+        LoadMoreHolders ->
+            ( { model | loadingMore = True, error = Nothing }, Lamdera.sendToBackend (LoadMoreShroomHolders model.cursor) )
+
+        GotHolderData result ->
+            case result of
+                Ok holders ->
+                    ( { model | holders = holders, totalHolders = List.length holders, loading = False, error = Nothing }, Cmd.none )
+                Err httpError ->
+                    let
+                        errorMsg = case httpError of
+                            Http.BadUrl url -> "Bad URL: " ++ url
+                            Http.Timeout -> "Request timeout"
+                            Http.NetworkError -> "Network error"
+                            Http.BadStatus status -> "HTTP " ++ String.fromInt status
+                            Http.BadBody body -> "Bad response: " ++ body
+                    in
+                    ( { model | loading = False, error = Just errorMsg }, Cmd.none )
+
+        GotMoreHolderData result ->
+            case result of
+                Ok { holders, cursor } ->
+                    let
+                        allHolders = model.holders ++ holders
+                        hasMore = cursor /= Nothing
+                    in
+                    ( { model 
+                        | holders = allHolders
+                        , totalHolders = List.length allHolders
+                        , loadingMore = False
+                        , cursor = cursor
+                        , hasMore = hasMore
+                        , error = Nothing 
+                      }, Cmd.none )
+                Err httpError ->
+                    let
+                        errorMsg = case httpError of
+                            Http.BadUrl url -> "Bad URL: " ++ url
+                            Http.Timeout -> "Request timeout"
+                            Http.NetworkError -> "Network error"
+                            Http.BadStatus status -> "HTTP " ++ String.fromInt status
+                            Http.BadBody body -> "Bad response: " ++ body
+                    in
+                    ( { model | loadingMore = False, error = Just errorMsg }, Cmd.none )
+
+        HoverHolder holder ->
+            ( { model | hoveredHolder = holder }, Cmd.none )
+
+        FetchViaMoralis ->
+            ( model, Cmd.none )
+
+        FetchViaGoldRush ->
+            ( model, Cmd.none )
+
+
 
 
 
@@ -85,6 +173,7 @@ init url key =
             , currentUser = Nothing
             , pendingAuth = False
             , preferences = initialPreferences
+            , shroomDashboard = Pages.ShroomDashboard.init
             }
     in
     inits model route
@@ -95,6 +184,9 @@ inits model route =
     case route of
         Admin adminRoute ->
             Pages.Admin.init model adminRoute
+
+        ShroomDashboard ->
+            ( model, Cmd.none )
 
         Default ->
             Pages.Default.init model
@@ -203,6 +295,35 @@ update msg model =
             in
             ( model, Cmd.none )
 
+        ShroomDashboardMsg msg_ ->
+            case msg_ of
+                FetchViaMoralis ->
+                    let
+                        currentShroom = model.shroomDashboard
+                        newShroomModel = { currentShroom | loading = True, error = Nothing }
+                    in
+                    ( { model | shroomDashboard = newShroomModel }
+                    , Lamdera.sendToBackend FetchShroomHoldersViaMoralis
+                    )
+
+                FetchViaGoldRush ->
+                    let
+                        currentShroom = model.shroomDashboard
+                        newShroomModel = { currentShroom | loading = True, error = Nothing }
+                    in
+                    ( { model | shroomDashboard = newShroomModel }
+                    , Lamdera.sendToBackend FetchShroomHoldersViaGoldRush
+                    )
+
+                _ ->
+                    let
+                        ( newShroomModel, cmd ) =
+                            updateShroomDashboard msg_ model.shroomDashboard
+                    in
+                    ( { model | shroomDashboard = newShroomModel }
+                    , Cmd.map ShroomDashboardMsg cmd
+                    )
+
         -- Admin_FusionPatch patch ->
         --     ( { model
         --         | fusionState =
@@ -253,12 +374,77 @@ updateFromBackend msg model =
             -- Simply ignore the denied action without any UI notification
             ( model, Cmd.none )
 
+        ShroomHoldersData result ->
+            let
+                currentShroom = model.shroomDashboard
+                shroomUpdate = case result of
+                    Ok holders ->
+                        let
+                            stats = calculateStatistics holders
+                        in
+                        { currentShroom 
+                            | holders = holders
+                            , totalHolders = List.length holders
+                            , medianHolding = stats.median
+                            , averageHolding = stats.average
+                            , maxHolding = stats.max
+                            , totalTokens = stats.total
+                            , loading = False
+                            , error = Nothing 
+                        }
+                    Err error ->
+                        { currentShroom | loading = False, error = Just error }
+            in
+            ( { model | shroomDashboard = shroomUpdate }, Cmd.none )
+
+        MoreShroomHoldersData result ->
+            let
+                currentShroom = model.shroomDashboard
+                shroomUpdate = case result of
+                    Ok { holders, cursor } ->
+                        let
+                            allHolders = currentShroom.holders ++ holders
+                            hasMore = cursor /= Nothing
+                        in
+                        { currentShroom 
+                            | holders = allHolders
+                            , totalHolders = List.length allHolders
+                            , loadingMore = False
+                            , cursor = cursor
+                            , hasMore = hasMore
+                            , error = Nothing 
+                        }
+                    Err error ->
+                        { currentShroom | loadingMore = False, error = Just error }
+            in
+            ( { model | shroomDashboard = shroomUpdate }, Cmd.none )
+
+        ProgressiveHoldersUpdate holders ->
+            let
+                currentShroom = model.shroomDashboard
+                stats = calculateStatistics holders
+                shroomUpdate = 
+                    { currentShroom 
+                        | holders = holders
+                        , totalHolders = List.length holders
+                        , medianHolding = stats.median
+                        , averageHolding = stats.average
+                        , maxHolding = stats.max
+                        , totalTokens = stats.total
+                        , loading = False
+                        , error = Nothing 
+                    }
+            in
+            ( { model | shroomDashboard = shroomUpdate }, Cmd.none )
+
         WS_Send message ->
             -- Log websocket messages for debugging
             let
                 _ = Debug.log "WS_Outgoing" message
             in
             ( model, Cmd.none )
+
+
 
 
 view : Model -> Browser.Document FrontendMsg

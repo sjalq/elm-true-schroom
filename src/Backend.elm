@@ -2,8 +2,11 @@ module Backend exposing (..)
 
 import Auth.Flow
 import Dict
+import Env
 -- import Fusion.Generated.Types
 -- import Fusion.Patch
+import Http
+import Json.Decode as Decode
 import Lamdera
 import RPC
 import Rights.Auth0 exposing (backendConfig)
@@ -42,6 +45,7 @@ init =
       , sessions = Dict.empty
       , users = Dict.empty
       , pollingJobs = Dict.empty
+      , shroomHoldersCache = Nothing
       }
     , Cmd.none
     )
@@ -112,6 +116,66 @@ update msg model =
             ( { model | pollingJobs = updatedPollingJobs }, Cmd.none )
                 |> log ("Updated job " ++ token ++ " with timestamp: " ++ String.fromInt timestamp)
 
+        GotMoralisHoldersResponse result ->
+            case result of
+                Ok holders ->
+                    ( model, Lamdera.broadcast (ShroomHoldersData (Ok holders)) )
+                        |> log ("Fetched " ++ String.fromInt (List.length holders) ++ " SHRMN holders via Moralis")
+
+                Err httpError ->
+                    ( model, Lamdera.broadcast (ShroomHoldersData (Err (httpErrorToString httpError))) )
+                        |> log ("Moralis failed: " ++ httpErrorToString httpError)
+
+        GotGoldRushHoldersResponse result ->
+            case result of
+                Ok holders ->
+                    let
+                        hasMore = List.length holders >= 100
+                        cache = { holders = holders, lastUpdated = 0, cacheValidMinutes = 60 }
+                        updatedModel = { model | shroomHoldersCache = Just cache }
+                    in
+                    ( updatedModel
+                    , Cmd.batch
+                        [ Lamdera.broadcast (ShroomHoldersData (Ok holders))
+                        , if hasMore then 
+                            fetchMoreHoldersFromGoldRush 1
+                          else 
+                            Cmd.none
+                        ]
+                    )
+                        |> log ("Fetched " ++ String.fromInt (List.length holders) ++ " SHRMN holders via GoldRush - auto-fetching more")
+
+                Err httpError ->
+                    ( model, Lamdera.broadcast (ShroomHoldersData (Err (httpErrorToString httpError))) )
+                        |> log ("GoldRush failed: " ++ httpErrorToString httpError)
+
+        GotMoreGoldRushHoldersResponse pageNum result ->
+            case result of
+                Ok holders ->
+                    let
+                        hasMore = List.length holders >= 100
+                        allHolders = case model.shroomHoldersCache of
+                            Just existingCache -> existingCache.holders ++ holders
+                            Nothing -> holders
+                        cache = { holders = allHolders, lastUpdated = 0, cacheValidMinutes = 60 }
+                        updatedModel = { model | shroomHoldersCache = Just cache }
+                    in
+                    ( updatedModel
+                    , Cmd.batch
+                        [ Lamdera.broadcast (MoreShroomHoldersData (Ok { holders = holders, cursor = Nothing }))
+                        , Lamdera.broadcast (ShroomHoldersData (Ok allHolders))
+                        , if hasMore then 
+                            fetchMoreHoldersFromGoldRush (pageNum + 1)
+                          else 
+                            Cmd.none
+                        ]
+                    )
+                        |> log ("Fetched page " ++ String.fromInt pageNum ++ " with " ++ String.fromInt (List.length holders) ++ " more SHRMN holders. Total: " ++ String.fromInt (List.length allHolders) ++ (if hasMore then " - fetching next" else " - done"))
+
+                Err httpError ->
+                    ( model, Lamdera.broadcast (MoreShroomHoldersData (Err (httpErrorToString httpError))) )
+                        |> log ("Failed to fetch more holders: " ++ httpErrorToString httpError)
+
 
 updateFromFrontend : BrowserCookie -> ConnectionId -> ToBackend -> Model -> ( Model, Cmd BackendMsg )
 updateFromFrontend browserCookie connectionId msg model =
@@ -164,6 +228,20 @@ updateFromFrontend browserCookie connectionId msg model =
 
         LoggedOut ->
             ( { model | sessions = Dict.remove browserCookie model.sessions }, Cmd.none )
+
+        FetchShroomHoldersViaMoralis ->
+            ( model, fetchHoldersFromMoralis )
+
+        FetchShroomHoldersViaGoldRush ->
+            ( model, fetchHoldersFromGoldRush )
+
+        LoadMoreShroomHolders cursor ->
+            let
+                pageNum = cursor 
+                    |> Maybe.andThen String.toInt 
+                    |> Maybe.withDefault 1
+            in
+            ( model, fetchMoreHoldersFromGoldRush pageNum )
 
         SetDarkModePreference preference ->
             case getUserFromCookie browserCookie model of
@@ -266,3 +344,74 @@ userToFrontend user =
     , role = getUserRole user |> roleToString
     , preferences = user.preferences
     }
+
+
+fetchHoldersFromMoralis : Cmd BackendMsg
+fetchHoldersFromMoralis =
+    let
+        url = "https://deep-index.moralis.io/api/v2.2/erc20/" ++ Env.shroomTokenAddress ++ "/owners?chain=base&limit=100"
+        headers = [ Http.header "X-API-Key" Env.moralisApiKey ]
+    in
+    Http.request
+        { method = "GET"
+        , headers = headers
+        , url = url
+        , body = Http.emptyBody
+        , expect = Http.expectJson GotMoralisHoldersResponse moralisHolderResponseDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+fetchHoldersFromGoldRush : Cmd BackendMsg
+fetchHoldersFromGoldRush =
+    let
+        url = "https://api.covalenthq.com/v1/base-mainnet/tokens/" ++ Env.shroomTokenAddress ++ "/token_holders_v2/?key=" ++ Env.goldRushApiKey
+    in
+    Http.get
+        { url = url
+        , expect = Http.expectJson GotGoldRushHoldersResponse goldRushHolderResponseDecoder
+        }
+
+fetchMoreHoldersFromGoldRush : Int -> Cmd BackendMsg
+fetchMoreHoldersFromGoldRush pageNum =
+    let
+        url = "https://api.covalenthq.com/v1/base-mainnet/tokens/" ++ Env.shroomTokenAddress ++ "/token_holders_v2/?key=" ++ Env.goldRushApiKey ++ "&page-number=" ++ String.fromInt pageNum
+    in
+    Http.get
+        { url = url
+        , expect = Http.expectJson (GotMoreGoldRushHoldersResponse pageNum) goldRushHolderResponseDecoder
+        }
+
+moralisHolderResponseDecoder : Decode.Decoder (List TokenHolder)
+moralisHolderResponseDecoder =
+    Decode.field "result" 
+        (Decode.list 
+            (Decode.map2 TokenHolder
+                (Decode.field "owner_address" Decode.string)
+                (Decode.field "balance_formatted" 
+                    (Decode.string |> Decode.map parseFormattedBalance)
+                )
+            )
+        )
+
+parseFormattedBalance : String -> Float
+parseFormattedBalance balanceStr =
+    String.toFloat balanceStr |> Maybe.withDefault 0
+
+goldRushHolderResponseDecoder : Decode.Decoder (List TokenHolder)
+goldRushHolderResponseDecoder =
+    Decode.field "data" 
+        (Decode.field "items"
+            (Decode.list 
+                (Decode.map2 TokenHolder
+                    (Decode.field "address" Decode.string)
+                    (Decode.field "balance" 
+                        (Decode.string |> Decode.map (\bal -> 
+                            String.toFloat bal 
+                                |> Maybe.withDefault 0 
+                                |> (\balFloat -> balFloat / 10^18)
+                        ))
+                    )
+                )
+            )
+        )

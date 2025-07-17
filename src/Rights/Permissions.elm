@@ -38,6 +38,15 @@ actionRoleMap msg =
         WS_Receive _ ->
             Anonymous -- Allow anyone to send websocket messages
 
+        FetchShroomHoldersViaMoralis ->
+            Anonymous -- Allow anyone to fetch public token holder data via Moralis
+
+        FetchShroomHoldersViaGoldRush ->
+            Anonymous -- Allow anyone to fetch public token holder data via GoldRush
+
+        LoadMoreShroomHolders _ ->
+            Anonymous -- Allow anyone to load more holders
+
         -- Fusion_PersistPatch _ ->
         --     SysAdmin
 
