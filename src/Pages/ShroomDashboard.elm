@@ -6,8 +6,8 @@ import Html.Events exposing (..)
 import Types exposing (..)
 import Theme
 import Supplemental exposing (..)
--- import Chart as C
--- import Chart.Attributes as CA
+import Chart as C
+import Chart.Attributes as CA
 
 
 view : ShroomDashboardModel -> Html ShroomDashboardMsg
@@ -43,6 +43,12 @@ headerSection model =
                 , disabled model.loading
                 ]
                 [ Html.text "Fetch via GoldRush" ]
+            , button 
+                [ class "px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors"
+                , onClick FetchTokenPrice
+                , disabled model.loading
+                ]
+                [ Html.text "Get Price" ]
             ]
         , if model.loading then
             div [ class "mt-4 text-blue-400" ]
@@ -101,6 +107,7 @@ holderChart model =
                     [ Html.text "Hover over bars to see holder details" ]
         , renderChart model
         , loadMoreButton model
+        , terezkaChart model
         ]
 
 
@@ -157,21 +164,15 @@ renderChart model =
                 [ attribute "width" "100%"
                 , attribute "height" "400"
                 , attribute "viewBox" "0 0 1000 400"
-                , class "w-full bg-gray-700 border-2 border-green-500"
+                , class "w-full bg-gray-900 border-2 border-green-500"
                 ]
                 ([ Html.node "rect" 
-                    [ attribute "x" "10"
-                    , attribute "y" "10" 
-                    , attribute "width" "50"
-                    , attribute "height" "100"
-                    , attribute "fill" "#ef4444"
-                    ] []
-                 , Html.node "rect"
-                    [ attribute "x" "70"
-                    , attribute "y" "50"
-                    , attribute "width" "50" 
-                    , attribute "height" "200"
-                    , attribute "fill" "#10b981"
+                    [ attribute "x" "0"
+                    , attribute "y" "0"
+                    , attribute "width" "1000"
+                    , attribute "height" "400"
+                    , attribute "fill" "#111827"
+                    , attribute "opacity" "1"
                     ] []
                  ] ++ bars)
             ]
@@ -291,13 +292,71 @@ init =
     , averageHolding = 0
     , maxHolding = 0
     , totalTokens = 0
+    , tokenPrice = Nothing
     } 
 
-secondaryChart : ShroomDashboardModel -> Html ShroomDashboardMsg
-secondaryChart model =
+terezkaChart : ShroomDashboardModel -> Html ShroomDashboardMsg
+terezkaChart model =
     div [ class "bg-gray-800 rounded-lg p-6 mt-8" ]
         [ h2 [ class "text-2xl font-bold mb-6 text-center text-green-400" ]
-            [ Html.text "Token Distribution Analysis" ]
-        , div [ class "text-center text-gray-400 py-8" ]
-            [ Html.text "Chart library not available - using SVG chart above" ]
+            [ Html.text "Token Holdings (Terezka Chart)" ]
+        , if List.isEmpty model.holders then
+            div [ class "text-center text-gray-400 py-8" ]
+                [ Html.text "No data available" ]
+          else
+            let
+                top100Holders = model.holders
+                    |> List.sortBy .balance
+                    |> List.reverse
+                    |> List.take 100
+
+                chartData = top100Holders
+                    |> List.indexedMap (\i holder -> 
+                        { x = toFloat i + 1
+                        , y = holder.balance / 1000000
+                        , holder = holder
+                        })
+            in
+            div []
+                [ case model.hoveredHolder of
+                    Just holder ->
+                        div [ class "mb-4 p-3 bg-gray-700 rounded text-center" ]
+                            [ div [ class "text-sm text-gray-300" ]
+                                [ Html.text ("Address: " ++ holder.address) ]
+                            , div [ class "text-lg font-bold text-green-400" ]
+                                [ Html.text (formatBalance holder.balance ++ " SHRMN") ]
+                            , case model.tokenPrice of
+                                Just price ->
+                                    div [ class "text-sm text-blue-400" ]
+                                        [ Html.text ("Value: $" ++ String.fromFloat (holder.balance * price / 1000000)) ]
+                                Nothing ->
+                                    div [] []
+                            ]
+                    Nothing ->
+                        div [ class "mb-4 p-3 bg-gray-700 rounded text-center text-gray-400" ]
+                            [ Html.text "Hover over bars to see holder details" ]
+                , case model.tokenPrice of
+                    Just price ->
+                        div [ class "text-center mb-4 p-3 bg-blue-900 rounded" ]
+                            [ div [ class "text-lg text-blue-400" ]
+                                [ Html.text ("Token Price: $" ++ String.fromFloat price) ]
+                            ]
+                    Nothing ->
+                        div [] []
+                , C.chart
+                    [ CA.height 300
+                    , CA.width 800
+                    , CA.margin { top = 30, right = 30, bottom = 60, left = 80 }
+                    ]
+                    [ C.xTicks []
+                    , C.yTicks []
+                    , C.xLabels [ CA.fontSize 12 ]
+                    , C.yLabels [ CA.format (\n -> formatBalance (n * 1000000) |> String.replace " SHRMN" "M"), CA.fontSize 12 ]
+                    , C.xAxis []
+                    , C.yAxis []
+                    , C.bars [ CA.spacing 0.1 ] 
+                        [ C.bar .y [ CA.color "#10b981" ] ] 
+                        chartData
+                    ]
+                ]
         ] 

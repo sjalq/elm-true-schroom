@@ -116,6 +116,7 @@ type ToBackend
     | LoadMoreShroomHolders (Maybe String)
     | SetDarkModePreference Bool
     | WS_Receive String
+    | FetchShroomTokenPrice
 
 
 type BackendMsg
@@ -131,6 +132,7 @@ type BackendMsg
     | GotMoralisHoldersResponse (Result Http.Error (List TokenHolder))
     | GotGoldRushHoldersResponse (Result Http.Error (List TokenHolder))
     | GotMoreGoldRushHoldersResponse Int (Result Http.Error (List TokenHolder))
+    | GotTokenPrice (Result Http.Error Float)
 
 
 type ToFrontend
@@ -147,6 +149,7 @@ type ToFrontend
     | ShroomHoldersData (Result String (List TokenHolder))
     | MoreShroomHoldersData (Result String { holders : List TokenHolder, cursor : Maybe String })
     | ProgressiveHoldersUpdate (List TokenHolder)
+    | ShroomTokenPriceUpdate (Maybe Float)
     -- | Admin_FusionResponse Fusion.Value
 
 
@@ -227,6 +230,7 @@ type alias ShroomDashboardModel =
     , averageHolding : Float
     , maxHolding : Float
     , totalTokens : Float
+    , tokenPrice : Maybe Float
     }
 
 type ShroomDashboardMsg
@@ -237,3 +241,4 @@ type ShroomDashboardMsg
     | HoverHolder (Maybe TokenHolder)
     | FetchViaMoralis
     | FetchViaGoldRush
+    | FetchTokenPrice

@@ -112,6 +112,9 @@ updateShroomDashboard msg model =
         FetchViaGoldRush ->
             ( model, Cmd.none )
 
+        FetchTokenPrice ->
+            ( model, Cmd.none )
+
 
 
 
@@ -315,6 +318,9 @@ update msg model =
                     , Lamdera.sendToBackend FetchShroomHoldersViaGoldRush
                     )
 
+                FetchTokenPrice ->
+                    ( model, Lamdera.sendToBackend FetchShroomTokenPrice )
+
                 _ ->
                     let
                         ( newShroomModel, cmd ) =
@@ -434,6 +440,13 @@ updateFromBackend msg model =
                         , loading = False
                         , error = Nothing 
                     }
+            in
+            ( { model | shroomDashboard = shroomUpdate }, Cmd.none )
+
+        ShroomTokenPriceUpdate price ->
+            let
+                currentShroom = model.shroomDashboard
+                shroomUpdate = { currentShroom | tokenPrice = price }
             in
             ( { model | shroomDashboard = shroomUpdate }, Cmd.none )
 

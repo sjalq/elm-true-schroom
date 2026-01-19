@@ -176,6 +176,16 @@ update msg model =
                     ( model, Lamdera.broadcast (MoreShroomHoldersData (Err (httpErrorToString httpError))) )
                         |> log ("Failed to fetch more holders: " ++ httpErrorToString httpError)
 
+        GotTokenPrice result ->
+            case result of
+                Ok price ->
+                    ( model, Lamdera.broadcast (ShroomTokenPriceUpdate (Just price)) )
+                        |> log ("Token price fetched: $" ++ String.fromFloat price)
+
+                Err httpError ->
+                    ( model, Lamdera.broadcast (ShroomTokenPriceUpdate Nothing) )
+                        |> log ("Failed to fetch token price: " ++ httpErrorToString httpError)
+
 
 updateFromFrontend : BrowserCookie -> ConnectionId -> ToBackend -> Model -> ( Model, Cmd BackendMsg )
 updateFromFrontend browserCookie connectionId msg model =
@@ -242,6 +252,9 @@ updateFromFrontend browserCookie connectionId msg model =
                     |> Maybe.withDefault 1
             in
             ( model, fetchMoreHoldersFromGoldRush pageNum )
+
+        FetchShroomTokenPrice ->
+            ( model, fetchShroomTokenPrice )
 
         SetDarkModePreference preference ->
             case getUserFromCookie browserCookie model of
@@ -414,4 +427,22 @@ goldRushHolderResponseDecoder =
                     )
                 )
             )
+        )
+
+fetchShroomTokenPrice : Cmd BackendMsg
+fetchShroomTokenPrice =
+    let
+        -- Query DexScreener for Base network SHRMN token price (most reliable for new tokens)
+        url = "https://api.dexscreener.com/tokens/v1/base/" ++ Env.shroomTokenAddress
+    in
+    Http.get
+        { url = url
+        , expect = Http.expectJson GotTokenPrice dexScreenerTokenPriceDecoder
+        }
+
+dexScreenerTokenPriceDecoder : Decode.Decoder Float
+dexScreenerTokenPriceDecoder =
+    Decode.index 0
+        (Decode.field "priceUsd" 
+            (Decode.string |> Decode.map (String.toFloat >> Maybe.withDefault 0))
         )

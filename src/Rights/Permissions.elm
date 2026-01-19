@@ -47,6 +47,9 @@ actionRoleMap msg =
         LoadMoreShroomHolders _ ->
             Anonymous -- Allow anyone to load more holders
 
+        FetchShroomTokenPrice ->
+            Anonymous -- Allow anyone to fetch public token price
+
         -- Fusion_PersistPatch _ ->
         --     SysAdmin
 
